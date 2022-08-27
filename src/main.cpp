@@ -1,0 +1,34 @@
+#include "register_helpers.h"
+
+// Clock Config Registers
+#define RCC_BASE 0x40021000
+
+#define RCC_GPIO_CC_OFFSET 0x0000002C
+
+#define RCC_GPIO_CC REGISTER(RCC_BASE + RCC_GPIO_CC_OFFSET)
+
+
+// GPIO Config Registers
+#define GPIO_A_BASE 0x50000000
+
+#define GPIO_MODE_OFFSET 0x00000000
+#define GPIO_OTYPE_OFFSET 0x00000004
+#define GPIO_ODR_OFFSET 0x00000014
+
+#define GPIO_A_MODE REGISTER(GPIO_A_BASE + GPIO_MODE_OFFSET)
+#define GPIO_A_OTYPE  REGISTER(GPIO_A_BASE + GPIO_OTYPE_OFFSET)
+#define GPIO_A_ODR  REGISTER(GPIO_A_BASE + GPIO_ODR_OFFSET)
+
+int main() {
+  RCC_GPIO_CC |= 0x0000009F;
+  GPIO_A_MODE  = 0xEB555505;
+  GPIO_A_OTYPE |= 0x00000013;
+  GPIO_A_ODR   = 0x00000013;
+
+  while(1) {
+    GPIO_A_ODR = (~(GPIO_A_ODR & 0x00000013)) & 0x00000013;
+    for(uint32_t i = 0; i < 500000; i++);
+  }
+
+  return 0;
+}
