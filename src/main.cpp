@@ -1,28 +1,38 @@
-#include "register_helpers.h"
-
-// Clock Config Registers
-#define RCC_BASE 0x40021000
-
-#define RCC_GPIO_CC_OFFSET 0x0000002C
-
-#define RCC_GPIO_CC REGISTER(RCC_BASE + RCC_GPIO_CC_OFFSET)
-
-
-// GPIO Config Registers
-#define GPIO_A_BASE 0x50000000
-
-#define GPIO_MODE_OFFSET 0x00000000
-#define GPIO_OTYPE_OFFSET 0x00000004
-#define GPIO_ODR_OFFSET 0x00000014
-
-#define GPIO_A_MODE REGISTER(GPIO_A_BASE + GPIO_MODE_OFFSET)
-#define GPIO_A_OTYPE  REGISTER(GPIO_A_BASE + GPIO_OTYPE_OFFSET)
-#define GPIO_A_ODR  REGISTER(GPIO_A_BASE + GPIO_ODR_OFFSET)
+#include "registers/rcc.h"
+#include "registers/gpio.h"
+#include "registers/flash.h"
 
 int main() {
-  RCC_GPIO_CC |= 0x0000009F;
-  GPIO_A_MODE  = 0xEB555505;
-  GPIO_A_OTYPE |= 0x00000013;
+  // Up main clock frequency
+  // Turn off PLL and wait for it be ready
+  RCC_CR &= ~(BIT_24);
+  while(RCC_CR & BIT_25);
+
+  // Enable the high speed interal oscillator
+  RCC_CR |= BIT_0;
+  while(RCC_CR & BIT_2);
+
+  // Set pll source, multiplier and divisior
+  RCC_CFGR &= ~BIT_16;
+  RCC_CFGR &= ~(0xF << 18);
+  RCC_CFGR |= (0x1 << 18);
+  RCC_CFGR &= ~(0x3 << 22);
+  RCC_CFGR |= (0x1 << 22);
+
+  // Set flash wait states
+  FLASH_ACR |= 0x1;
+
+  // Enable PLL
+  RCC_CR |= BIT_24;
+  while(RCC_CR & BIT_25);
+
+  // Switch system clock to PLL
+  RCC_CFGR |= (0x3 << 0);
+
+  // Setup GPIO for blinken lights
+  RCC_IOPENR |= 0x0000009F;
+  GPIO_A_MODER  = 0xEB555505;
+  GPIO_A_OTYPER |= 0x00000013;
   GPIO_A_ODR   = 0x00000013;
 
   while(1) {
