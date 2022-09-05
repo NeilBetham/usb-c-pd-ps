@@ -57,11 +57,15 @@ int main() {
   const uint8_t ptn5110_addr = 0x52;
   uint8_t buffer[2];
 
-  for(uint32_t index = 0; index < 100000; index++);
+  for(uint8_t index = 0; index < 100; index++);
+
   ptn5110.read_from(ptn5110_addr, 0, buffer, 2);
 
   uint8_t alert_mask[2] = {0xFF, 0x7F};
   ptn5110.write_to(ptn5110_addr, 0x12, alert_mask, 2);
+
+  for(uint8_t index = 0; index < 10; index++);
+
   ptn5110.read_from(ptn5110_addr, 0x12, alert_mask, 2);
 
 

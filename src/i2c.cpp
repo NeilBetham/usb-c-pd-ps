@@ -175,7 +175,7 @@ int I2C::read_from(uint8_t addr, uint8_t reg, uint8_t* data, uint32_t len) {
   // Set transfer dir
   REGISTER(_base_addr + I2C_CR2_OFFSET) |= BIT_10;
 
-  // Start the rx end of the transaction
+  // Start the rx transaction
   REGISTER(_base_addr + I2C_CR2_OFFSET)  |= BIT_13;
 
   // Wait for the data to come in
