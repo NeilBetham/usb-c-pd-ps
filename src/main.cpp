@@ -3,6 +3,7 @@
 #include "registers/flash.h"
 
 #include "i2c.h"
+#include "ptn5110.h"
 
 int main() {
   // Up main clock frequency
@@ -32,8 +33,9 @@ int main() {
   RCC_CFGR |= (0x3 << 0);
 
   // Setup the I2C peripheral
-  I2C ptn5110(1);
-  ptn5110.init();
+  I2C ptn5110_i2c(1);
+  ptn5110_i2c.init();
+  PTN5110 ptn5110(ptn5110_i2c, 0x52);
 
   // Enable IO Port A
   RCC_IOPENR |= 0x0000009F;
@@ -53,36 +55,26 @@ int main() {
 
   GPIO_A_OTYPER   |= (0x00000003 << 9);
 
-  // Check the vendor ID for the PTN5110
-  const uint8_t ptn5110_addr = 0x52;
-  uint8_t buffer[2];
-
-  for(uint8_t index = 0; index < 100; index++);
-
-  ptn5110.read_from(ptn5110_addr, 0, buffer, 2);
-
-  uint8_t alert_mask[2] = {0xFF, 0x7F};
-  ptn5110.write_to(ptn5110_addr, 0x12, alert_mask, 2);
-
-  for(uint8_t index = 0; index < 10; index++);
-
-  ptn5110.read_from(ptn5110_addr, 0x12, alert_mask, 2);
-
-
   // Setup GPIO for blinken lights
   GPIO_A_MODER  &= ~(0x0000030F);
   GPIO_A_MODER  |= 0x00000105;
   GPIO_A_OTYPER |= 0x00000013;
   GPIO_A_ODR   = 0x00000013;
 
-  if(buffer[0] == 0xC9 && buffer[1] == 0x1F) {
-    GPIO_A_ODR &= ~(BIT_3 | BIT_1);
+  if(ptn5110.get_register(0) == 0x1FC9) {
+    GPIO_A_ODR &= ~BIT_4;
   }
 
-  while(1) {
-//    GPIO_A_ODR = (~(GPIO_A_ODR & 0x00000013)) & 0x00000013;
-    for(uint32_t i = 0; i < 2000000; i++);
+  if(ptn5110.get_register(2) == 0x5110) {
+    GPIO_A_ODR &= ~BIT_1;
   }
+
+  if(ptn5110.get_register(4) == 0x0004) {
+    GPIO_A_ODR &= ~BIT_0;
+  }
+
+  uint16_t alert_register = ptn5110.get_register(0x10);
+  uint16_t pow_stat_register = ptn5110.get_register(0x70);
 
   return 0;
 }

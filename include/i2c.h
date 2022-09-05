@@ -19,11 +19,7 @@ public:
   int write_to(uint8_t addr, uint8_t reg, const uint8_t* data, uint32_t len);
   int read_from(uint8_t addr, uint8_t reg, uint8_t* data, uint32_t len);
 
-
 private:
   uint8_t _i2c_number;
   uint32_t _base_addr = 0;
-
-
-
 };
