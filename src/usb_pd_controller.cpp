@@ -151,20 +151,95 @@ struct PACKED RequestBattPDO {
 #define PHY_REG_VCONN_FLT_RECOV     0x9E
 #define PHY_REG_VCONN_FLT_ATTMP     0x9F
 
-
 void USBPDController::init() {
-  // Perform an initial checkin with the PHY and clear any alerts
-  uint16_t alert_status = _phy.get_register(PHY_REG_ALERT);
-  uint16_t cc_status    = _phy.get_register(PHY_REG_CC_STAT);
-  _phy.set_register(PHY_REG_ALERT, 0xFFFF);
+  _state = PDState::init;
 
-  if(alert_status & BIT_2) {
-    // A message was received and needs to be processed
-  }
+  // Clear the CC status change alert
+  _phy.set_register(PHY_REG_ALERT, BIT_0);
 
   // Configure the PHY
   _phy.set_register(PHY_REG_ROLE_CTL, 0x2A);  // Sink only @ 3A
   _phy_set_register(PHY_REG_RECV_DETECT, BIT_0 | BIT_5);
 
+  // Prime the message handler
+  handle_alert();
+}
+
+void USBPDController::handler_alert() {
+  // Read the alert status off of the HPY
+  uint16_t alert_status = _phy.get_register(PHY_REG_ALERT);
+
+  // Check if the alert was for a message rx
+  if(alert_status & BIT_2) {
+    handle_msg_rx();
+    _phy.set_register(PHY_REG_ALERT, BIT_2);
+  }
+}
+
+
+void USBPDController::handle_msg_rx() {
+  uint8_t msg_buffer[30] = {0};
+  uint16_t msg_length = _phy.get_register(PHY_REG_READ_BYTE_COUNT);
+  uint16_t msg_type = _phy.get_register(PHY_REG_READ_BYTE_COUNT);
+  for(uint16_t index = 0; index < msg_length; index++) {
+    msg_buffer[index] = (uint8_t)_phy.get_register(PHY_REG_READ_BYTE_COUNT);
+  }
+
+  PDMsgHeader* msg_header = msg_buffer;
+  if(msg.num_data_obj > 0) {
+    switch(msg_header.message_type) {
+      case 1:
+        USBPDController::handle_good_crc_msg();
+        break;
+      case 2:
+        // Goto min
+        break;
+      case 3:
+        USBPDController::handle_src_accept_msg();
+        break;
+      case 4:
+        USBPDController::handle_src_reject_msg();
+        break;
+      case 5:
+        // ping
+        break;
+      case 6:
+        USBPDController::handle_src_ps_rdy_msg();
+        break;
+      default:
+        break;
+    }
+  } else {
+    switch(msg_header.message_type) {
+      case 1:
+        USBPDController::handle_src_caps_msg(msg_buffer, msg_length);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+void USBPDController::handle_src_caps_msg(const uint8_t* message, uint32_t len) {
+
+}
+
+void USBPDController::handle_src_accept_msg() {
+
+}
+
+void USBPDController::hanlde_src_reject_msg() {
+
+}
+
+void USBPDController::handle_src_ps_rdy_msg() {
+
+}
+
+void USBPDController::handle_reset_msg() {
+
+}
+
+void USBPDController::handle_good_crc_msg() {
 
 }
