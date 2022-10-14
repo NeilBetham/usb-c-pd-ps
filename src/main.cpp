@@ -1,9 +1,27 @@
 #include "registers/rcc.h"
 #include "registers/gpio.h"
 #include "registers/flash.h"
+#include "registers/exti.h"
+#include "registers/syscfg.h"
+#include "registers/core.h"
 
 #include "i2c.h"
 #include "ptn5110.h"
+#include "usb_pd_controller.h"
+#include "status_light.h"
+#include "output_en.h"
+
+I2C ptn5110_i2c(1);
+PTN5110 ptn5110(ptn5110_i2c, 0x52);
+USBPDController controller(ptn5110);
+bool read_pending = false;
+
+void ExternInterrupt_15_4_ISR(void) {
+  read_pending = true;
+  NVIC_ICPR |= BIT_7;
+  EXTI_PR |= BIT_7;
+}
+
 
 int main() {
   // Up main clock frequency
@@ -33,9 +51,7 @@ int main() {
   RCC_CFGR |= (0x3 << 0);
 
   // Setup the I2C peripheral
-  I2C ptn5110_i2c(1);
   ptn5110_i2c.init();
-  PTN5110 ptn5110(ptn5110_i2c, 0x52);
 
   // Enable IO Port A
   RCC_IOPENR |= 0x0000009F;
@@ -55,26 +71,33 @@ int main() {
 
   GPIO_A_OTYPER   |= (0x00000003 << 9);
 
-  // Setup GPIO for blinken lights
-  GPIO_A_MODER  &= ~(0x0000030F);
-  GPIO_A_MODER  |= 0x00000105;
-  GPIO_A_OTYPER |= 0x00000013;
-  GPIO_A_ODR   = 0x00000013;
+  // Init status light
+  status_light::init();
 
-  if(ptn5110.get_register(0) == 0x1FC9) {
-    GPIO_A_ODR &= ~BIT_4;
+  // Init the output enable line
+  output_en::init();
+
+  // Setup alert GPIO interrupt
+  RCC_APB2ENR |= BIT_0;
+  GPIO_A_MODER &= ~(0x0000C000); // PA7 Input mode
+  EXTI_IMR |= BIT_7;  // Unmask EXTI line 7
+  EXTI_FTSR |= BIT_7;  // Falling edge detection
+  SYSCFG_EXTICR2 &= ~(0x0000F000);  // Interrupt 7 reads from PA7
+  NVIC_ISER |= BIT_7;
+  asm("CPSIE i");
+
+  for(uint32_t index = 0; index < 10000000; index++);
+
+  controller.init();
+
+  while(true) {
+    asm("WFE");
+
+    if(read_pending)  {
+      controller.handle_alert();
+      read_pending = false;
+    }
   }
-
-  if(ptn5110.get_register(2) == 0x5110) {
-    GPIO_A_ODR &= ~BIT_1;
-  }
-
-  if(ptn5110.get_register(4) == 0x0004) {
-    GPIO_A_ODR &= ~BIT_0;
-  }
-
-  uint16_t alert_register = ptn5110.get_register(0x10);
-  uint16_t pow_stat_register = ptn5110.get_register(0x70);
 
   return 0;
 }

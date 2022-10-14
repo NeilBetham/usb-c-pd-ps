@@ -28,9 +28,9 @@ DEFAULT void RealTimeClock_ISR(void);
 DEFAULT void Flash_ISR(void);
 DEFAULT void RunClockConfig_ISR(void);
 
-DEFAULT void ExternInterupt_0_1_ISR(void);
-DEFAULT void ExternInterupt_3_2_ISR(void);
-DEFAULT void ExternInterupt_15_4_ISR(void);
+DEFAULT void ExternInterrupt_0_1_ISR(void);
+DEFAULT void ExternInterrupt_3_2_ISR(void);
+DEFAULT void ExternInterrupt_15_4_ISR(void);
 
 DEFAULT void DMAChannel_1_ISR(void);
 DEFAULT void DMAChannel_3_2_ISR(void);
@@ -92,9 +92,9 @@ const VectorTableEntry vectors[] = {
   RealTimeClock_ISR,          // 0x48
   Flash_ISR,                  // 0x4C
   RunClockConfig_ISR,         // 0x50
-  ExternInterupt_0_1_ISR,     // 0x54
-  ExternInterupt_3_2_ISR,     // 0x58
-  ExternInterupt_15_4_ISR,    // 0x5C
+  ExternInterrupt_0_1_ISR,    // 0x54
+  ExternInterrupt_3_2_ISR,    // 0x58
+  ExternInterrupt_15_4_ISR,   // 0x5C
   0,                          // 0x60
   DMAChannel_1_ISR,           // 0x64
   DMAChannel_3_2_ISR,         // 0x68

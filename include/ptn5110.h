@@ -21,8 +21,10 @@ public:
   uint16_t get_register(uint8_t reg);
   bool set_register(uint8_t reg, uint16_t value);
 
-  bool rx_usb_pd_msg(uint32_t len, uint8_t* buffer);
+  bool rx_usb_pd_msg(uint32_t& len, uint8_t* buffer);
   bool tx_usb_pd_msg(uint32_t len, const uint8_t* buffer);
+
+  void hard_reset();
 
   // This should be called from an ISR
   void handle_alert();

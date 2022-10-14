@@ -1,5 +1,13 @@
 #include "usb_pd_controller.h"
 
+#include "registers/helpers.h"
+
+#include "status_light.h"
+#include "output_en.h"
+
+#include <string.h>
+
+
 // PD Control Message Types
 #define PD_MSG_TYPE_GOODCRC     0b0001
 #define PD_MSG_TYPE_GOTOMIN     0b0010
@@ -42,28 +50,28 @@ struct PACKED PDMsgHeader  {
 struct PACKED SourceCapsFixedPDO {
   uint16_t max_current_10ma: 10;
   uint16_t voltage_50mv: 10;
-  uint8_t peak_current: 2;
-  uint8_t : 3;
-  uint8_t dual_role_data: 1;
-  uint8_t usb_comm_cap: 1;
-  uint8_t uncon_power: 1;
-  uint8_t suspend_sup: 1;
-  uint8_t dual_role_power: 1;
-  uint8_t supply_type: 2;
+  uint16_t peak_current: 2;
+  uint16_t : 3;
+  uint16_t dual_role_data: 1;
+  uint16_t usb_comm_cap: 1;
+  uint16_t uncon_power: 1;
+  uint16_t suspend_sup: 1;
+  uint16_t dual_role_power: 1;
+  uint16_t supply_type: 2;
 };
 
 struct PACKED SourceCapsBattPDO {
   uint16_t max_power_250mw: 10;
   uint16_t min_voltage_50mv: 10;
   uint16_t max_voltage_50mv: 10;
-  uint8_t  supply_type: 2;
+  uint16_t  supply_type: 2;
 };
 
 struct PACKED SourceCapsVarPDO {
   uint16_t max_current_10ma: 10;
   uint16_t min_voltage_50mv: 10;
   uint16_t max_voltage_50mv: 10;
-  uint8_t  supply_type: 2;
+  uint16_t  supply_type: 2;
 };
 
 // Request Defs
@@ -112,7 +120,7 @@ struct PACKED RequestBattPDO {
 #define PHY_REG_CC_STAT             0x1D
 #define PHY_REG_POWER_STAT          0x1E
 #define PHY_REG_FAULT_STAT          0x1F
-#define PHY_REG_EXT_STAT            0x20
+#define PHY_REG_EXTEND_STAT         0x20
 #define PHY_REG_ALERT_EXT_STAT      0x21
 #define PHY_REG_COMMAND             0x23
 #define PHY_REG_DEVICE_CAPS_1       0x24
@@ -154,65 +162,186 @@ struct PACKED RequestBattPDO {
 void USBPDController::init() {
   _state = PDState::init;
 
-  // Clear the CC status change alert
-  _phy.set_register(PHY_REG_ALERT, BIT_0);
-
   // Configure the PHY
-  _phy.set_register(PHY_REG_ROLE_CTL, 0x2A);  // Sink only @ 3A
-  _phy_set_register(PHY_REG_RECV_DETECT, BIT_0 | BIT_5);
+  _phy.set_register(PHY_REG_ROLE_CTL, 0x0A);  // Sink only
+  _phy.set_register(PHY_REG_RECV_DETECT, BIT_0 | BIT_5);  // SOP and hard resets
+  _phy.set_register(PHY_REG_MSG_HDR_INFO, 0x04);  // Sink only
+  _phy.set_register(PHY_REG_FAULT_CTL, BIT_1);  // Disable OV fault
+  _phy.set_register(PHY_REG_VBUS_V_ALRM_HI_CONF, 800);  // 20V Overvolt thresh
 
   // Prime the message handler
   handle_alert();
 }
 
-void USBPDController::handler_alert() {
+void USBPDController::handle_alert() {
+  //status_light::set_color(0, 0, 1);
+
   // Read the alert status off of the HPY
   uint16_t alert_status = _phy.get_register(PHY_REG_ALERT);
+  while(alert_status > 0) {
+    if(alert_status & BIT_0) {
+      // CC Status Alert
+      uint16_t cc_status = _phy.get_register(PHY_REG_CC_STAT);
 
-  // Check if the alert was for a message rx
-  if(alert_status & BIT_2) {
-    handle_msg_rx();
-    _phy.set_register(PHY_REG_ALERT, BIT_2);
+      // Check the plug orientation
+      uint8_t cc1_status = cc_status & 0x0003;
+      uint8_t cc2_status = (cc_status & 0x000C) >> 2;
+
+      if(cc2_status > 0) {
+        _phy.set_register(PHY_REG_TCPC_CTL, BIT_0);
+      }
+
+      _phy.set_register(PHY_REG_ALERT, BIT_0);
+    }
+
+    if(alert_status & BIT_1) {
+      // Port power status
+      uint16_t power_status = _phy.get_register(PHY_REG_POWER_STAT);
+      _phy.set_register(PHY_REG_ALERT, BIT_1);
+    }
+
+    if(alert_status & BIT_2) {
+      // SOP* RX
+      handle_msg_rx();
+    }
+
+    if(alert_status & BIT_3) {
+      // RX Hard reset
+      _phy.set_register(PHY_REG_ALERT, BIT_3);
+    }
+
+    if(alert_status & BIT_4) {
+      // TX SOP* Failed
+      _phy.set_register(PHY_REG_ALERT, BIT_4);
+    }
+
+    if(alert_status & BIT_5) {
+      // TX SOP* Discarded
+      _phy.set_register(PHY_REG_ALERT, BIT_5);
+    }
+
+    if(alert_status & BIT_6) {
+      // TX SOP* Sucess
+      _phy.set_register(PHY_REG_ALERT, BIT_6);
+    }
+
+    if(alert_status & BIT_7) {
+      // VBUS V High
+      _phy.set_register(PHY_REG_ALERT, BIT_7);
+    }
+
+    if(alert_status & BIT_8) {
+      // VBUS V Low
+      _phy.set_register(PHY_REG_ALERT, BIT_8);
+    }
+
+    if(alert_status & BIT_9) {
+      // Fault, check fault reg
+      uint16_t fault_status = _phy.get_register(PHY_REG_FAULT_STAT);
+      if(fault_status > 0) { _phy.set_register(PHY_REG_FAULT_STAT, 0xFFFF); }
+      //status_light::set_color(1, 0, 0);
+      _phy.set_register(PHY_REG_ALERT, BIT_9);
+    }
+
+    if(alert_status & BIT_10) {
+      // RX Buff Overflow
+      _phy.set_register(PHY_REG_ALERT, BIT_10);
+    }
+
+    if(alert_status & BIT_11) {
+      // VBUS Sink Discon Detect
+      _phy.set_register(PHY_REG_ALERT, BIT_11);
+    }
+
+    if(alert_status & BIT_12) {
+      // Begin SOP* Message; for messages > 133 bytes
+      _phy.set_register(PHY_REG_ALERT, BIT_12);
+    }
+
+    if(alert_status & BIT_13) {
+      // Extended Status Changed
+      _phy.set_register(PHY_REG_ALERT, BIT_13);
+    }
+
+    if(alert_status & BIT_14) {
+      // Alert extended changed
+      _phy.set_register(PHY_REG_ALERT, BIT_14);
+    }
+
+    if(alert_status & BIT_15) {
+      // Vendor defined extended
+      _phy.set_register(PHY_REG_ALERT, BIT_15);
+    }
+    alert_status = _phy.get_register(PHY_REG_ALERT);
   }
+  status_light::set_color(0, 0, 0);
 }
 
+void USBPDController::send_caps_req() {
+  PDMsgHeader message;
+  memset(&message, 0, sizeof(PDMsgHeader));
+
+  message.message_type = PD_MSG_TYPE_GET_SRC_CAP;
+  message.num_data_obj = 0;
+  message.spec_rev = 1;
+  message.message_id = _msg_id_counter;
+  _msg_id_counter++;
+
+  _phy.tx_usb_pd_msg(sizeof(PDMsgHeader), (uint8_t*)&message);
+}
+
+void USBPDController::soft_reset() {
+  PDMsgHeader message;
+  memset(&message, 0, sizeof(PDMsgHeader));
+
+  message.message_type = PD_MSG_TYPE_SOFT_RESET;
+  message.num_data_obj = 0;
+  message.spec_rev = 1;
+  message.message_id = _msg_id_counter;
+  _msg_id_counter++;
+
+  _phy.tx_usb_pd_msg(sizeof(PDMsgHeader), (uint8_t*)&message);
+  _msg_id_counter = 0;
+}
+
+void USBPDController::hard_reset() {
+  _phy.hard_reset();
+}
 
 void USBPDController::handle_msg_rx() {
   uint8_t msg_buffer[30] = {0};
-  uint16_t msg_length = _phy.get_register(PHY_REG_READ_BYTE_COUNT);
-  uint16_t msg_type = _phy.get_register(PHY_REG_READ_BYTE_COUNT);
-  for(uint16_t index = 0; index < msg_length; index++) {
-    msg_buffer[index] = (uint8_t)_phy.get_register(PHY_REG_READ_BYTE_COUNT);
-  }
+  uint32_t msg_length = 0;
+  _phy.rx_usb_pd_msg(msg_length, (uint8_t*)msg_buffer);
+  _phy.set_register(PHY_REG_ALERT, BIT_2);
 
-  PDMsgHeader* msg_header = msg_buffer;
-  if(msg.num_data_obj > 0) {
-    switch(msg_header.message_type) {
+  PDMsgHeader* msg_header = (PDMsgHeader*)(msg_buffer + 2);
+  if(msg_header->num_data_obj == 0) {
+    switch(msg_header->message_type) {
       case 1:
-        USBPDController::handle_good_crc_msg();
+        handle_good_crc_msg();
         break;
       case 2:
         // Goto min
         break;
       case 3:
-        USBPDController::handle_src_accept_msg();
+        handle_src_accept_msg();
         break;
       case 4:
-        USBPDController::handle_src_reject_msg();
+        handle_src_reject_msg();
         break;
       case 5:
         // ping
         break;
       case 6:
-        USBPDController::handle_src_ps_rdy_msg();
+        handle_src_ps_rdy_msg();
         break;
       default:
         break;
     }
   } else {
-    switch(msg_header.message_type) {
+    switch(msg_header->message_type) {
       case 1:
-        USBPDController::handle_src_caps_msg(msg_buffer, msg_length);
+        handle_src_caps_msg(msg_buffer, msg_length);
         break;
       default:
         break;
@@ -221,19 +350,64 @@ void USBPDController::handle_msg_rx() {
 }
 
 void USBPDController::handle_src_caps_msg(const uint8_t* message, uint32_t len) {
+  const uint8_t* message_contents = message + 2;
 
+  uint32_t selected_object_index = 0;
+  uint16_t current = 0;
+  uint32_t data_objects = ((PDMsgHeader*)message_contents)->num_data_obj;
+
+  const uint32_t* pdos_start = (uint32_t*)(message_contents + 2);
+  // Main requirement for selecting a capability is that it is over 15V at 2A
+  for(uint32_t index = 0; index < data_objects; index++) {
+    uint32_t pdo = *(pdos_start + index);
+    uint8_t type = pdo & 0xC0000000 >> 30;
+    if(type == PD_CAP_TYPE_FIXED) {
+      // Fixed suply
+      SourceCapsFixedPDO* fixed_pdo = (SourceCapsFixedPDO*)&pdo;
+      uint32_t voltage = fixed_pdo->voltage_50mv;
+      if(voltage >= 260) {
+        selected_object_index = index;
+        current = fixed_pdo->max_current_10ma;
+        break;
+      }
+    } else if(type == PD_CAP_TYPE_BATT) {
+      // Battery Supply
+      SourceCapsBattPDO* batt_pdo = (SourceCapsBattPDO*)&pdo;
+      uint32_t voltage = batt_pdo->min_voltage_50mv;
+
+      if(voltage >= 260) {
+        selected_object_index = index;
+        current = batt_pdo->max_power_250mw;
+        break;
+      }
+    } else if(type == PD_CAP_TYPE_VAR) {
+      // Variable Supply
+      SourceCapsVarPDO* var_pdo = (SourceCapsVarPDO*)&pdo;
+      uint32_t voltage = var_pdo->min_voltage_50mv;
+
+      if(voltage >= 260) {
+        selected_object_index = index;
+        current = var_pdo->max_current_10ma;
+        break;
+      }
+    }
+  }
+
+  if(selected_object_index == 2) {
+    send_request(current, selected_object_index);
+  }
 }
 
 void USBPDController::handle_src_accept_msg() {
 
 }
 
-void USBPDController::hanlde_src_reject_msg() {
+void USBPDController::handle_src_reject_msg() {
 
 }
 
 void USBPDController::handle_src_ps_rdy_msg() {
-
+  output_en::set_state(true);
 }
 
 void USBPDController::handle_reset_msg() {
@@ -242,4 +416,27 @@ void USBPDController::handle_reset_msg() {
 
 void USBPDController::handle_good_crc_msg() {
 
+}
+
+void USBPDController::send_request(uint16_t current, uint8_t index) {
+  PDMsgHeader req_hdr;
+  RequestFixVarPDO request;
+  memset(&req_hdr, 0, sizeof(req_hdr));
+  memset(&request, 0, sizeof(request));
+
+  req_hdr.num_data_obj = 0x1;
+  req_hdr.message_type = 0x2;
+  req_hdr.spec_rev = 0x1;
+  req_hdr.message_id = _msg_id_counter;
+  _msg_id_counter++;
+
+  request.max_current_10ma = current;
+  request.op_current_10ma = current;
+  request.object_pos = index + 1;
+
+  uint8_t buffer[6] = {0};
+  memcpy(buffer, &req_hdr, sizeof(req_hdr));
+  memcpy(buffer + 2, &request, sizeof(request));
+
+  _phy.tx_usb_pd_msg(6, buffer);
 }

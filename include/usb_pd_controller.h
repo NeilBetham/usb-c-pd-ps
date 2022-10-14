@@ -32,6 +32,11 @@ public:
   // AlertDelegate
   void handle_alert();
 
+  // Send caps request
+  void send_caps_req();
+  void soft_reset();
+  void hard_reset();
+
 private:
   PTN5110& _phy;
 
@@ -41,7 +46,9 @@ private:
   void handle_src_reject_msg();
   void handle_src_ps_rdy_msg();
   void handle_reset_msg();
-  void handle_good_crc();
+  void handle_good_crc_msg();
+
+  void send_request(uint16_t current, uint8_t index);
 
   uint8_t _msg_id_counter = 0;
   PDState _state = PDState::unknown;
