@@ -167,15 +167,13 @@ void USBPDController::init() {
   _phy.set_register(PHY_REG_RECV_DETECT, BIT_0 | BIT_5);  // SOP and hard resets
   _phy.set_register(PHY_REG_MSG_HDR_INFO, 0x04);  // Sink only
   _phy.set_register(PHY_REG_FAULT_CTL, BIT_1);  // Disable OV fault
-  _phy.set_register(PHY_REG_VBUS_V_ALRM_HI_CONF, 800);  // 20V Overvolt thresh
+  _phy.set_register(PHY_REG_VBUS_V_ALRM_HI_CONF, 850);  // 20V Overvolt thresh
 
   // Prime the message handler
   handle_alert();
 }
 
 void USBPDController::handle_alert() {
-  //status_light::set_color(0, 0, 1);
-
   // Read the alert status off of the HPY
   uint16_t alert_status = _phy.get_register(PHY_REG_ALERT);
   while(alert_status > 0) {
@@ -239,7 +237,6 @@ void USBPDController::handle_alert() {
       // Fault, check fault reg
       uint16_t fault_status = _phy.get_register(PHY_REG_FAULT_STAT);
       if(fault_status > 0) { _phy.set_register(PHY_REG_FAULT_STAT, 0xFFFF); }
-      //status_light::set_color(1, 0, 0);
       _phy.set_register(PHY_REG_ALERT, BIT_9);
     }
 
@@ -274,7 +271,6 @@ void USBPDController::handle_alert() {
     }
     alert_status = _phy.get_register(PHY_REG_ALERT);
   }
-  status_light::set_color(0, 0, 0);
 }
 
 void USBPDController::send_caps_req() {
@@ -318,7 +314,7 @@ void USBPDController::handle_msg_rx() {
   if(msg_header->num_data_obj == 0) {
     switch(msg_header->message_type) {
       case 1:
-        handle_good_crc_msg();
+        // Good CRC, handled by TCPC
         break;
       case 2:
         // Goto min
@@ -354,6 +350,7 @@ void USBPDController::handle_src_caps_msg(const uint8_t* message, uint32_t len) 
 
   uint32_t selected_object_index = 0;
   uint16_t current = 0;
+  uint16_t max_voltage = 0;
   uint32_t data_objects = ((PDMsgHeader*)message_contents)->num_data_obj;
 
   const uint32_t* pdos_start = (uint32_t*)(message_contents + 2);
@@ -361,40 +358,46 @@ void USBPDController::handle_src_caps_msg(const uint8_t* message, uint32_t len) 
   for(uint32_t index = 0; index < data_objects; index++) {
     uint32_t pdo = *(pdos_start + index);
     uint8_t type = pdo & 0xC0000000 >> 30;
+
     if(type == PD_CAP_TYPE_FIXED) {
       // Fixed suply
       SourceCapsFixedPDO* fixed_pdo = (SourceCapsFixedPDO*)&pdo;
       uint32_t voltage = fixed_pdo->voltage_50mv;
-      if(voltage >= 260) {
+      if((voltage >= 260) && (voltage > max_voltage)) {
         selected_object_index = index;
         current = fixed_pdo->max_current_10ma;
-        break;
+        max_voltage = voltage;
       }
     } else if(type == PD_CAP_TYPE_BATT) {
       // Battery Supply
       SourceCapsBattPDO* batt_pdo = (SourceCapsBattPDO*)&pdo;
       uint32_t voltage = batt_pdo->min_voltage_50mv;
 
-      if(voltage >= 260) {
+      if((voltage >= 260) && (voltage > max_voltage)) {
         selected_object_index = index;
         current = batt_pdo->max_power_250mw;
-        break;
+        max_voltage = voltage;
       }
     } else if(type == PD_CAP_TYPE_VAR) {
       // Variable Supply
       SourceCapsVarPDO* var_pdo = (SourceCapsVarPDO*)&pdo;
       uint32_t voltage = var_pdo->min_voltage_50mv;
 
-      if(voltage >= 260) {
+      if((voltage >= 260) && (voltage > max_voltage)) {
         selected_object_index = index;
         current = var_pdo->max_current_10ma;
-        break;
+        max_voltage = voltage;
       }
     }
   }
 
-  if(selected_object_index == 2) {
+  if(selected_object_index > 0) {
     send_request(current, selected_object_index);
+    status_light::set_color(0, 1, 0);
+  } else {
+    SourceCapsFixedPDO* fixed_pdo = (SourceCapsFixedPDO*)&pdos_start;
+    send_request(fixed_pdo->max_current_10ma, 1);
+    status_light::set_color(1, 0, 0);
   }
 }
 

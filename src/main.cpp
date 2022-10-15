@@ -73,6 +73,7 @@ int main() {
 
   // Init status light
   status_light::init();
+  status_light::set_color(1, 1, 1);
 
   // Init the output enable line
   output_en::init();
@@ -85,8 +86,6 @@ int main() {
   SYSCFG_EXTICR2 &= ~(0x0000F000);  // Interrupt 7 reads from PA7
   NVIC_ISER |= BIT_7;
   asm("CPSIE i");
-
-  for(uint32_t index = 0; index < 10000000; index++);
 
   controller.init();
 
