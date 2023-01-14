@@ -406,7 +406,7 @@ void USBPDController::handle_src_accept_msg() {
 }
 
 void USBPDController::handle_src_reject_msg() {
-
+  status_light::set_color(1, 0, 0);
 }
 
 void USBPDController::handle_src_ps_rdy_msg() {
