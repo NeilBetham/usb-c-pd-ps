@@ -13,20 +13,20 @@ void status_light::init() {
 
 void status_light::set_color(uint32_t red, uint32_t green, uint32_t blue) {
   if(red > 0) {
+    GPIO_A_ODR &= ~BIT_0;
+  } else {
+    GPIO_A_ODR |= BIT_0;
+  }
+
+  if(green > 0) {
     GPIO_A_ODR &= ~BIT_1;
   } else {
     GPIO_A_ODR |= BIT_1;
   }
 
-  if(green > 0) {
+  if(blue > 0) {
     GPIO_A_ODR &= ~BIT_4;
   } else {
     GPIO_A_ODR |= BIT_4;
-  }
-
-  if(blue > 0) {
-    GPIO_A_ODR &= ~BIT_0;
-  } else {
-    GPIO_A_ODR |= BIT_0;
   }
 }

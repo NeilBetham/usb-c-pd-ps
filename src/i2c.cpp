@@ -51,11 +51,11 @@ void I2C::init() {
   case 1:
     // Assumes a 16 mhz clock source
     I2C_1_TIMINGR = 0;
-    I2C_1_TIMINGR |= 0x9;  // SCLL
-    I2C_1_TIMINGR |= 0x3 << 8; // SCLH
-    I2C_1_TIMINGR |= 0x2 << 16; // SDADEL
-    I2C_1_TIMINGR |= 0x3 << 20; // SCLDEL
-    I2C_1_TIMINGR |= 0x1 << 28; // PRESC
+    I2C_1_TIMINGR |= 0x4;  // SCLL
+    I2C_1_TIMINGR |= 0x2 << 8; // SCLH
+    I2C_1_TIMINGR |= 0x0 << 16; // SDADEL
+    I2C_1_TIMINGR |= 0x2 << 20; // SCLDEL
+    I2C_1_TIMINGR |= 0x0 << 28; // PRESC
     break;
   case 2:
     // Assumes a 16 mhz clock source
